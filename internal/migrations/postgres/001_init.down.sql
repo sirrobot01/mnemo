@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS settings;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS projections;
+DROP TABLE IF EXISTS conflicts;
+DROP TABLE IF EXISTS proposals;
+DROP TABLE IF EXISTS memory_tags;
+DROP TABLE IF EXISTS memory_evidence;
+DROP TABLE IF EXISTS memories;
+DROP TABLE IF EXISTS repositories;

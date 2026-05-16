@@ -1,0 +1,12 @@
+DROP INDEX IF EXISTS idx_events_repo_type;
+DROP INDEX IF EXISTS idx_projections_repo_tool;
+DROP INDEX IF EXISTS idx_conflicts_repo_status;
+DROP INDEX IF EXISTS idx_proposals_repo_status;
+DROP INDEX IF EXISTS idx_proposals_repo_id;
+DROP INDEX IF EXISTS idx_memory_tags_tag;
+DROP INDEX IF EXISTS idx_memory_tags_memory_id;
+DROP INDEX IF EXISTS idx_memory_evidence_memory_id;
+DROP INDEX IF EXISTS idx_memories_repo_type;
+DROP INDEX IF EXISTS idx_memories_repo_status;
+DROP INDEX IF EXISTS idx_memories_repo_id;
+DROP INDEX IF EXISTS idx_repositories_root_path;

@@ -1,0 +1,12 @@
+CREATE INDEX IF NOT EXISTS idx_repositories_root_path ON repositories(root_path);
+CREATE INDEX IF NOT EXISTS idx_memories_repo_id ON memories(repo_id);
+CREATE INDEX IF NOT EXISTS idx_memories_repo_status ON memories(repo_id, status);
+CREATE INDEX IF NOT EXISTS idx_memories_repo_type ON memories(repo_id, type);
+CREATE INDEX IF NOT EXISTS idx_memory_evidence_memory_id ON memory_evidence(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_tags_memory_id ON memory_tags(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_tags_tag ON memory_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_proposals_repo_id ON proposals(repo_id);
+CREATE INDEX IF NOT EXISTS idx_proposals_repo_status ON proposals(repo_id, status);
+CREATE INDEX IF NOT EXISTS idx_conflicts_repo_status ON conflicts(repo_id, status);
+CREATE INDEX IF NOT EXISTS idx_projections_repo_tool ON projections(repo_id, tool);
+CREATE INDEX IF NOT EXISTS idx_events_repo_type ON events(repo_id, type);

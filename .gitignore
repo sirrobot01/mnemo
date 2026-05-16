@@ -1,0 +1,14 @@
+/mnemo
+
+node_modules/
+dist/
+.astro/
+
+.mnemo/mnemo.db
+.mnemo/cache/
+.mnemo/logs/
+
+
+.idea/
+docs/
+/.mnemo/
