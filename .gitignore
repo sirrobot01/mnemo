@@ -12,3 +12,7 @@ dist/
 .idea/
 docs/
 /.mnemo/
+
+# build artifacts ignored, but a placeholder UI is force-tracked so
+# `go:embed all:dist` builds on a fresh clone:
+#   git add -f web/dist/index.html
