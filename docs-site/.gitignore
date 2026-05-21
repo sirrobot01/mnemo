@@ -1,0 +1,4 @@
+# The parent repo ignores every directory named docs. Keep the Starlight
+# content collection visible to Git so CI builds the same docs as local builds.
+!/src/content/docs/
+!/src/content/docs/**
