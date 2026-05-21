@@ -23,6 +23,7 @@ type Ignore struct {
 var knownTools = map[string]bool{
 	"claude": true, "codex": true, "cursor": true,
 	"windsurf": true, "aider": true, "continue": true,
+	"copilot": true, "devin": true,
 }
 
 // LoadIgnore reads <repoRoot>/.mnemo/ignore. A missing file yields an empty
@@ -53,12 +54,14 @@ func LoadIgnore(repoRoot string) (*Ignore, error) {
 	return ig, sc.Err()
 }
 
-// SkipTool reports whether an entire tool's sessions are opted out.
-func (i *Ignore) SkipTool(tool string) bool {
+// SkipAgent reports whether an entire agent's sessions are opted out. A bare
+// known-tool name in .mnemo/ignore (e.g. "codex") matches the agent of that
+// name or kind.
+func (i *Ignore) SkipAgent(agent string) bool {
 	if i == nil {
 		return false
 	}
-	return i.tools[strings.ToLower(tool)]
+	return i.tools[strings.ToLower(agent)]
 }
 
 // SkipPath reports whether a session source path matches an ignore glob.

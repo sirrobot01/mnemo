@@ -11,8 +11,8 @@ import (
 	"github.com/sirrobot01/mnemo/internal/app/ingestsvc"
 	"github.com/sirrobot01/mnemo/internal/domain"
 	"github.com/sirrobot01/mnemo/internal/migrations"
+	"github.com/sirrobot01/mnemo/internal/sessions"
 	"github.com/sirrobot01/mnemo/internal/sessions/claude"
-	"github.com/sirrobot01/mnemo/internal/sessions/codex"
 	"github.com/sirrobot01/mnemo/internal/storage/sqlite"
 )
 
@@ -48,7 +48,7 @@ func TestImportIdempotentAndRedacts(t *testing.T) {
 		t.Fatalf("write jsonl: %v", err)
 	}
 
-	svc := ingestsvc.New(repo, adapter, claude.New(home))
+	svc := ingestsvc.New(repo, adapter, sessions.SingleAgentRegistry("claude", claude.New(home)))
 
 	res, err := svc.Import(ctx)
 	if err != nil {
@@ -129,12 +129,12 @@ func TestImportHonorsIgnore(t *testing.T) {
 		t.Fatalf("write skip: %v", err)
 	}
 
-	svc := ingestsvc.New(repo, adapter, claude.New(home), codex.New(t.TempDir()))
+	svc := ingestsvc.New(repo, adapter, sessions.SingleAgentRegistry("claude", claude.New(home)))
 	res, err := svc.Import(ctx)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	if len(res) != 1 || res[0].Tool != "claude" {
+	if len(res) != 1 || res[0].Agent != "claude" {
 		t.Fatalf("codex tool should be skipped entirely; got %+v", res)
 	}
 	if res[0].Discovered != 2 || res[0].Skipped != 1 || res[0].Imported != 1 {
@@ -171,7 +171,7 @@ func TestImportSkipsUnchangedFiles(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	svc := ingestsvc.New(repo, adapter, claude.New(home))
+	svc := ingestsvc.New(repo, adapter, sessions.SingleAgentRegistry("claude", claude.New(home)))
 
 	r1, err := svc.Import(ctx)
 	if err != nil {
@@ -232,7 +232,7 @@ func BenchmarkImportUnchanged(b *testing.B) {
 		sb = append(sb, []byte(`{"type":"user","message":{"role":"user","content":"line `+strconv.Itoa(i)+`"},"timestamp":"2026-05-17T10:00:00.000Z","sessionId":"s","gitBranch":"main"}`+"\n")...)
 	}
 	_ = os.WriteFile(filepath.Join(projects, "s.jsonl"), sb, 0o644)
-	svc := ingestsvc.New(repo, adapter, claude.New(home))
+	svc := ingestsvc.New(repo, adapter, sessions.SingleAgentRegistry("claude", claude.New(home)))
 	if _, err := svc.Import(ctx); err != nil { // prime
 		b.Fatalf("prime: %v", err)
 	}

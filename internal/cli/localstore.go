@@ -4,88 +4,182 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/sirrobot01/mnemo/internal/app/enrich"
+	"github.com/sirrobot01/mnemo/internal/app/statesvc"
 	"github.com/sirrobot01/mnemo/internal/app/tasksvc"
 	"github.com/sirrobot01/mnemo/internal/config"
 	"github.com/sirrobot01/mnemo/internal/domain"
 	"github.com/sirrobot01/mnemo/internal/migrations"
+	reporoot "github.com/sirrobot01/mnemo/internal/repo"
+	"github.com/sirrobot01/mnemo/internal/sessions"
 	"github.com/sirrobot01/mnemo/internal/storage"
 	"github.com/sirrobot01/mnemo/internal/storage/sqlite"
 )
 
-// localStore holds the per-invocation SQLite adapter and repository record.
-type localStore struct {
-	adapter *sqlite.Adapter
-	repo    domain.Repository
+type localProject struct {
+	info reporoot.Info
+	cfg  config.Config
+	dsn  string
 }
 
-// openLocalStore loads config, applies migrations, opens the SQLite adapter,
-// and ensures the repository row exists. The local CLI workflow is
-// SQLite-only; PostgreSQL is reserved for shared/team mode.
-func openLocalStore(ctx context.Context, root string) (localStore, func(), error) {
-	root, err := filepath.Abs(root)
+type localStoreOptions struct {
+	withRegistry bool
+}
+
+// localStore holds the per-invocation SQLite adapter and repository record.
+// The agent registry is populated only for commands that explicitly need
+// session discovery.
+type localStore struct {
+	adapter  *sqlite.Adapter
+	repo     domain.Repository
+	cfg      config.Config
+	registry *sessions.Registry
+}
+
+func resolveLocalProject(start string) (localProject, error) {
+	info, err := reporoot.Resolve(start)
+	if err != nil {
+		return localProject{}, err
+	}
+	cfg, err := config.LoadLayered(info.Root)
+	if err != nil {
+		return localProject{}, fmt.Errorf("load config: %w", err)
+	}
+	return localProject{info: info, cfg: cfg, dsn: resolveDSN(cfg.Database.DSN)}, nil
+}
+
+// openLocalStore resolves the project, opens the configured SQLite adapter,
+// verifies migration metadata from that adapter, and ensures the repository row
+// exists. It intentionally does not build the agent registry by default.
+func openLocalStore(ctx context.Context, start string) (localStore, func(), error) {
+	project, err := resolveLocalProject(start)
 	if err != nil {
 		return localStore{}, nil, err
 	}
+	return openResolvedLocalStore(ctx, project, localStoreOptions{})
+}
 
-	cfg, err := config.Load(config.DefaultPath(root))
+func openLocalStoreWithRegistry(ctx context.Context, start string) (localStore, func(), error) {
+	project, err := resolveLocalProject(start)
 	if err != nil {
-		return localStore{}, nil, fmt.Errorf("load config: %w", err)
+		return localStore{}, nil, err
 	}
-	plan := migrations.PlanFor(cfg.Database.Type)
+	return openResolvedLocalStore(ctx, project, localStoreOptions{withRegistry: true})
+}
+
+func openResolvedLocalStore(ctx context.Context, project localProject, opts localStoreOptions) (localStore, func(), error) {
+	plan := migrations.PlanFor(string(project.cfg.Database.Type))
 	if plan.DatabaseType != "sqlite" {
 		return localStore{}, nil, fmt.Errorf("local CLI workflow is not implemented for %s yet", plan.DatabaseType)
 	}
-
-	dsn := resolveDSN(root, cfg.Database.DSN)
-	if _, err := migrations.ApplySQLite(ctx, dsn); err != nil {
+	if err := ensureLocalDatabaseExists(project.dsn); err != nil {
 		return localStore{}, nil, err
 	}
 
-	adapter, err := sqlite.Open(ctx, dsn)
+	adapter, err := sqlite.Open(ctx, project.dsn)
 	if err != nil {
 		return localStore{}, nil, err
 	}
+	if err := ensureLocalSchemaCurrent(ctx, adapter); err != nil {
+		adapter.Close()
+		return localStore{}, nil, err
+	}
 
-	repo, err := ensureRepository(ctx, adapter, root)
+	repository, err := ensureRepository(ctx, adapter, project.info)
 	if err != nil {
 		adapter.Close()
 		return localStore{}, nil, err
 	}
 
-	return localStore{adapter: adapter, repo: repo}, func() { _ = adapter.Close() }, nil
+	var registry *sessions.Registry
+	if opts.withRegistry {
+		registry, err = buildRegistry(project.cfg)
+		if err != nil {
+			adapter.Close()
+			return localStore{}, nil, fmt.Errorf("build agent registry: %w", err)
+		}
+	}
+
+	return localStore{adapter: adapter, repo: repository, cfg: project.cfg, registry: registry}, func() { _ = adapter.Close() }, nil
 }
 
-func ensureRepository(ctx context.Context, adapter *sqlite.Adapter, root string) (domain.Repository, error) {
-	repo, err := adapter.GetRepositoryByRootPath(ctx, root)
-	if err == nil {
-		return repo, nil
+func migrateLocalStore(ctx context.Context, cfg config.Config) error {
+	plan := migrations.PlanFor(string(cfg.Database.Type))
+	if plan.DatabaseType != "sqlite" {
+		return fmt.Errorf("local CLI workflow is not implemented for %s yet", plan.DatabaseType)
 	}
-	if !errors.Is(err, storage.ErrNotFound) {
+	_, err := migrations.ApplySQLite(ctx, resolveDSN(cfg.Database.DSN))
+	return err
+}
+
+func ensureLocalDatabaseExists(dsn string) error {
+	if dsn == ":memory:" {
+		return nil
+	}
+	if _, err := os.Stat(dsn); errors.Is(err, os.ErrNotExist) {
+		pending, pendingErr := migrations.PendingCount("sqlite", 0, false)
+		if pendingErr != nil {
+			return pendingErr
+		}
+		return fmt.Errorf("database has %d pending migration(s); run `mnemo db migrate`", pending)
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureLocalSchemaCurrent(ctx context.Context, adapter *sqlite.Adapter) error {
+	state, err := adapter.MigrationState(ctx)
+	if err != nil {
+		return fmt.Errorf("check database migrations: %w", err)
+	}
+	if state.Dirty {
+		return fmt.Errorf("database migration is dirty at version %d; repair it before continuing", state.Version)
+	}
+	pending, err := migrations.PendingCount("sqlite", state.Version, state.Exists)
+	if err != nil {
+		return err
+	}
+	if pending > 0 {
+		return fmt.Errorf("database has %d pending migration(s); run `mnemo db migrate`", pending)
+	}
+	return nil
+}
+
+// ensureRepository looks the project up by its stable identity (git remote or
+// git-root path), so invoking mnemo from any subdirectory of a repo always
+// resolves to the same rows in the single DB.
+func ensureRepository(ctx context.Context, adapter *sqlite.Adapter, info reporoot.Info) (domain.Repository, error) {
+	id := repositoryID(info.Identity)
+	if existing, err := adapter.GetRepository(ctx, id); err == nil {
+		return existing, nil
+	} else if !errors.Is(err, storage.ErrNotFound) {
 		return domain.Repository{}, err
 	}
 
 	now := time.Now().UTC()
-	repo = domain.Repository{
-		ID:        repositoryID(root),
-		Name:      filepath.Base(root),
-		RootPath:  root,
+	repository := domain.Repository{
+		ID:        id,
+		Name:      filepath.Base(info.Root),
+		RootPath:  info.Root,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if repo.Name == "." || repo.Name == string(filepath.Separator) {
-		repo.Name = "repository"
+	if repository.Name == "." || repository.Name == string(filepath.Separator) {
+		repository.Name = "repository"
 	}
-	if err := adapter.CreateRepository(ctx, repo); err != nil {
+	if err := adapter.CreateRepository(ctx, repository); err != nil {
 		return domain.Repository{}, err
 	}
-	return repo, nil
+	return repository, nil
 }
 
-func repositoryID(root string) domain.ID {
-	return domain.DeterministicID(domain.PrefixRepository, root)
+func repositoryID(identity string) domain.ID {
+	return domain.DeterministicID(domain.PrefixRepository, identity)
 }
 
 // newTaskSvc builds a tasksvc.Service for an opened store, applying the
@@ -93,8 +187,18 @@ func repositoryID(root string) domain.ID {
 // or invalid value keeps the tasksvc default.
 func newTaskSvc(store localStore) *tasksvc.Service {
 	svc := tasksvc.New(store.repo, store.adapter, store.adapter, store.adapter, tasksvc.DefaultIdleWindow)
-	if cfg, err := config.Load(config.DefaultPath(store.repo.RootPath)); err == nil {
-		svc.SetColdAfter(cfg.ColdAfterDuration())
-	}
+	svc.SetColdAfter(store.cfg.ColdAfterDuration())
 	return svc
+}
+
+func newStateSvc(store localStore) (*statesvc.Service, error) {
+	svc := statesvc.New(store.adapter, store.adapter, store.adapter)
+	enricher, err := enrich.New(store.cfg.Enrichment)
+	if err != nil {
+		return nil, err
+	}
+	if enricher != nil {
+		svc.SetEnricher(enricher)
+	}
+	return svc, nil
 }

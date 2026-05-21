@@ -46,7 +46,7 @@ func TestPostgresIntegration(t *testing.T) {
 	// Session with an absolute path and a secret-bearing event. The §12
 	// invariant: the shared DB must hold neither.
 	sess := domain.Session{
-		ID: "sess_pg", RepoID: repo.ID, Tool: domain.SessionToolClaude,
+		ID: "sess_pg", RepoID: repo.ID, Agent: "claude", Kind: domain.SessionKindClaude,
 		SourcePath:        "/Users/secret/proj/.claude/projects/x/s.jsonl",
 		SourceFingerprint: "123:456", Branch: "main",
 		Status: domain.SessionStatusIngested, StartedAt: now,

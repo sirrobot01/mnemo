@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/sirrobot01/mnemo/internal/api"
+	"github.com/sirrobot01/mnemo/internal/app/authsvc"
 	"github.com/sirrobot01/mnemo/internal/cli/output"
-	"github.com/sirrobot01/mnemo/internal/config"
 	"github.com/sirrobot01/mnemo/internal/logging"
 	"github.com/sirrobot01/mnemo/internal/migrations"
 	"github.com/sirrobot01/mnemo/internal/ui"
@@ -22,6 +22,9 @@ import (
 func newServeCommand(root *string) *cobra.Command {
 	var addr string
 	var apiOnly bool
+	var requireAuth bool
+	var allowSignup bool
+	var tokenTTL string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -30,7 +33,7 @@ func newServeCommand(root *string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			store, cleanup, err := openLocalStore(ctx, *root)
+			store, cleanup, err := openLocalStoreWithRegistry(ctx, *root)
 			if err != nil {
 				return err
 			}
@@ -38,21 +41,25 @@ func newServeCommand(root *string) *cobra.Command {
 			logger := logging.FromContext(ctx).With("addr", addr, "repository", store.repo.ID)
 
 			dbStatus := func() (string, int, int, error) {
-				cfg, err := config.Load(config.DefaultPath(store.repo.RootPath))
-				if err != nil {
-					return "", 0, 0, err
-				}
+				cfg := store.cfg
 				if cfg.Database.Type != "sqlite" {
-					return cfg.Database.Type, 0, 0, nil
+					return string(cfg.Database.Type), 0, 0, nil
 				}
-				st, err := migrations.StatusSQLite(ctx, resolveDSN(store.repo.RootPath, cfg.Database.DSN))
+				st, err := migrations.StatusSQLite(ctx, resolveDSN(cfg.Database.DSN))
 				if err != nil {
-					return cfg.Database.Type, 0, 0, err
+					return string(cfg.Database.Type), 0, 0, err
 				}
-				return cfg.Database.Type, len(st.Applied), len(st.Pending), nil
+				return string(cfg.Database.Type), len(st.Applied), len(st.Pending), nil
 			}
 
-			apiHandler := api.New(store.repo, store.adapter, enabledAdapters(), dbStatus)
+			var auth *authsvc.Service
+			if requireAuth {
+				ttl, _ := time.ParseDuration(tokenTTL)
+				auth = authsvc.New(store.adapter, ttl)
+				logger.InfoContext(ctx, "server auth enabled; /v1 requires a bearer token")
+			}
+
+			apiHandler := api.New(store.repo, store.adapter, store.registry, dbStatus, auth, allowSignup)
 			mux := http.NewServeMux()
 			mux.Handle("/v1/", logging.Middleware(logger.With("surface", "api"), apiHandler))
 			if !apiOnly {
@@ -65,7 +72,7 @@ func newServeCommand(root *string) *cobra.Command {
 
 			server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 			logger.InfoContext(ctx, "starting mnemo server", "ui_enabled", !apiOnly)
-			if err := output.FromCommand(cmd).Line(fmt.Sprintf("Serving Mnemo on http://%s (API under /v1)", addr)); err != nil {
+			if err := output.FromCommand(cmd).Line(fmt.Sprintf("Serving Mnemo on http://%s", addr)); err != nil {
 				return err
 			}
 
@@ -87,5 +94,8 @@ func newServeCommand(root *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:47321", "HTTP listen address")
 	cmd.Flags().BoolVar(&apiOnly, "api-only", false, "serve only the /v1 API")
+	cmd.Flags().BoolVar(&requireAuth, "auth", true, "require browser/API login")
+	cmd.Flags().BoolVar(&allowSignup, "allow-signup", true, "allow browser signup when auth is enabled")
+	cmd.Flags().StringVar(&tokenTTL, "token-ttl", "720h", "browser/API auth token lifetime")
 	return cmd
 }

@@ -14,7 +14,7 @@ func TestScopeValid(t *testing.T) {
 }
 
 func TestSessionValidate(t *testing.T) {
-	s := Session{ID: "sess_1", RepoID: "repo_1", Tool: SessionToolClaude, SourcePath: "/x.jsonl", Status: SessionStatusIngested}
+	s := Session{ID: "sess_1", RepoID: "repo_1", Agent: "claude", Kind: SessionKindClaude, SourcePath: "/x.jsonl", Status: SessionStatusIngested}
 	if err := s.Validate(); err != nil {
 		t.Fatalf("valid session rejected: %v", err)
 	}

@@ -8,114 +8,94 @@ CREATE TABLE repositories (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE memories (
+CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   repo_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  content TEXT NOT NULL,
-  structured_value TEXT NOT NULL DEFAULT '{}',
-  status TEXT NOT NULL,
-  confidence REAL NOT NULL,
-  priority REAL NOT NULL,
-  source TEXT NOT NULL,
-  valid_from TEXT NOT NULL,
-  valid_until TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  last_verified_at TEXT,
-  created_by TEXT NOT NULL DEFAULT '',
-  FOREIGN KEY (repo_id) REFERENCES repositories(id)
-);
-
-CREATE TABLE memory_evidence (
-  id TEXT PRIMARY KEY,
-  memory_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  path TEXT NOT NULL DEFAULT '',
+  agent TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  source_path TEXT NOT NULL,
+  external_id TEXT NOT NULL DEFAULT '',
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  branch TEXT NOT NULL DEFAULT '',
   commit_hash TEXT NOT NULL DEFAULT '',
-  line_start INTEGER NOT NULL DEFAULT 0,
-  line_end INTEGER NOT NULL DEFAULT 0,
-  reason TEXT NOT NULL DEFAULT '',
+  message_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  ingested_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (memory_id) REFERENCES memories(id)
+  updated_at TEXT NOT NULL,
+  source_fingerprint TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (repo_id) REFERENCES repositories(id)
 );
 
-CREATE TABLE memory_tags (
+CREATE TABLE session_events (
   id TEXT PRIMARY KEY,
-  memory_id TEXT NOT NULL,
-  tag TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (memory_id) REFERENCES memories(id)
-);
-
-CREATE TABLE proposals (
-  id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
   type TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  content TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  timestamp TEXT NOT NULL,
   structured_value TEXT NOT NULL DEFAULT '{}',
-  confidence REAL NOT NULL,
-  evidence TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  repo_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  goal TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
+  branch TEXT NOT NULL DEFAULT '',
+  pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  created_by TEXT NOT NULL DEFAULT '',
+  last_active_at TEXT NOT NULL,
   FOREIGN KEY (repo_id) REFERENCES repositories(id)
 );
 
-CREATE TABLE conflicts (
-  id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
-  memory_id_a TEXT NOT NULL,
-  memory_id_b TEXT NOT NULL,
-  type TEXT NOT NULL,
-  description TEXT NOT NULL,
-  suggested_resolution TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (repo_id) REFERENCES repositories(id)
+CREATE TABLE task_sessions (
+  task_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  attached_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, session_id),
+  FOREIGN KEY (task_id) REFERENCES tasks(id),
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
-CREATE TABLE projections (
+CREATE TABLE working_states (
   id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
-  tool TEXT NOT NULL,
-  path TEXT NOT NULL,
-  template TEXT NOT NULL,
-  checksum TEXT NOT NULL DEFAULT '',
-  managed_mode TEXT NOT NULL,
-  last_generated_at TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (repo_id) REFERENCES repositories(id)
-);
-
-CREATE TABLE events (
-  id TEXT PRIMARY KEY,
-  repo_id TEXT NOT NULL,
-  type TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  compiled_at TEXT NOT NULL,
+  source_watermark TEXT NOT NULL DEFAULT '',
   payload TEXT NOT NULL DEFAULT '{}',
-  source TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (repo_id) REFERENCES repositories(id)
+  FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
-CREATE TABLE settings (
-  id TEXT PRIMARY KEY,
-  scope TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value TEXT NOT NULL DEFAULT '{}',
+CREATE TABLE auth_tokens (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_repositories_root_path ON repositories(root_path);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_agent_source ON sessions(agent, source_path);
+CREATE INDEX IF NOT EXISTS idx_sessions_repo_agent ON sessions(repo_id, agent);
+CREATE INDEX IF NOT EXISTS idx_sessions_repo_status ON sessions(repo_id, status);
+CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id, sequence);
+CREATE INDEX IF NOT EXISTS idx_tasks_repo_status ON tasks(repo_id, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_last_active ON tasks(last_active_at);
+CREATE INDEX IF NOT EXISTS idx_task_sessions_session ON task_sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_working_states_task ON working_states(task_id, version);
+CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);

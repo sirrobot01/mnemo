@@ -11,7 +11,7 @@ func TestLoadIgnoreMissingFileAllowsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadIgnore: %v", err)
 	}
-	if ig.SkipTool("claude") || ig.SkipPath("/x/s.jsonl") {
+	if ig.SkipAgent("claude") || ig.SkipPath("/x/s.jsonl") {
 		t.Fatal("missing .mnemo/ignore must allow everything")
 	}
 }
@@ -29,8 +29,8 @@ func TestLoadIgnoreParsesToolsAndGlobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadIgnore: %v", err)
 	}
-	if !ig.SkipTool("codex") || ig.SkipTool("Claude") {
-		t.Fatalf("tool skip wrong: codex=%v claude=%v", ig.SkipTool("codex"), ig.SkipTool("Claude"))
+	if !ig.SkipAgent("codex") || ig.SkipAgent("Claude") {
+		t.Fatalf("tool skip wrong: codex=%v claude=%v", ig.SkipAgent("codex"), ig.SkipAgent("Claude"))
 	}
 	if !ig.SkipPath("/home/u/foo-experiment.jsonl") {
 		t.Fatal("filename glob should match")

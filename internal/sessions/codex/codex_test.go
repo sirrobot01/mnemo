@@ -32,8 +32,8 @@ func TestCodexDiscoverAndIngest(t *testing.T) {
 	writeRollout(t, home, repoRoot)
 
 	ad := New(home)
-	if ad.Tool() != domain.SessionToolCodex {
-		t.Fatalf("tool = %s", ad.Tool())
+	if ad.Kind() != domain.SessionKindCodex {
+		t.Fatalf("tool = %s", ad.Kind())
 	}
 	ds, err := ad.Discover(context.Background(), repoRoot)
 	if err != nil {

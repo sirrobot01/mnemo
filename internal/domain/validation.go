@@ -14,18 +14,10 @@ func (s Scope) Valid() bool {
 	}
 }
 
-func (t SessionTool) Valid() bool {
-	switch t {
-	case SessionToolClaude,
-		SessionToolCodex,
-		SessionToolCursor,
-		SessionToolWindsurf,
-		SessionToolAider,
-		SessionToolContinue:
-		return true
-	default:
-		return false
-	}
+// Valid reports whether the kind is non-empty. Kinds are open (custom agents
+// bring their own parser kind), so validation only rejects the empty kind.
+func (k SessionKind) Valid() bool {
+	return strings.TrimSpace(string(k)) != ""
 }
 
 func (s SessionStatus) Valid() bool {
@@ -58,8 +50,11 @@ func (s Session) Validate() error {
 	if strings.TrimSpace(string(s.RepoID)) == "" {
 		return fmt.Errorf("session repo_id is required")
 	}
-	if !s.Tool.Valid() {
-		return fmt.Errorf("invalid session tool %q", s.Tool)
+	if strings.TrimSpace(s.Agent) == "" {
+		return fmt.Errorf("session agent is required")
+	}
+	if !s.Kind.Valid() {
+		return fmt.Errorf("invalid session kind %q", s.Kind)
 	}
 	if strings.TrimSpace(s.SourcePath) == "" {
 		return fmt.Errorf("session source_path is required")

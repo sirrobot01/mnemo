@@ -1,7 +1,7 @@
-// Package postgres is the PostgreSQL storage adapter for the re-centered
-// product: repositories, sessions, tasks, and working states.
+// Package postgres is the PostgreSQL storage adapter for repositories,
+// sessions, tasks, and working states.
 //
-// PostgreSQL is the shared/team backend. It must NEVER receive raw transcript
+// PostgreSQL is the metadata backend. It must NEVER receive raw transcript
 // content or absolute paths — only metadata and the compiled,
 // already-secret-scanned working state. That invariant is
 // enforced here at the persistence boundary (see sanitizeSession /
@@ -152,13 +152,14 @@ func (a *Adapter) SaveSession(ctx context.Context, sess domain.Session) error {
 	_, err = db.ExecContext(
 		ctx,
 		`INSERT INTO sessions (
-			id, repo_id, tool, source_path, external_id, started_at, ended_at,
+			id, repo_id, agent, kind, source_path, external_id, started_at, ended_at,
 			branch, commit_hash, message_count, status, ingested_at, created_at, updated_at,
 			source_fingerprint
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		ON CONFLICT (id) DO UPDATE SET
 			repo_id = EXCLUDED.repo_id,
-			tool = EXCLUDED.tool,
+			agent = EXCLUDED.agent,
+			kind = EXCLUDED.kind,
 			source_path = EXCLUDED.source_path,
 			external_id = EXCLUDED.external_id,
 			started_at = EXCLUDED.started_at,
@@ -170,7 +171,7 @@ func (a *Adapter) SaveSession(ctx context.Context, sess domain.Session) error {
 			ingested_at = EXCLUDED.ingested_at,
 			updated_at = EXCLUDED.updated_at,
 			source_fingerprint = EXCLUDED.source_fingerprint`,
-		sess.ID, sess.RepoID, sess.Tool, sess.SourcePath, sess.ExternalID,
+		sess.ID, sess.RepoID, sess.Agent, sess.Kind, sess.SourcePath, sess.ExternalID,
 		sess.StartedAt.UTC(), optionalTime(sess.EndedAt), sess.Branch, sess.CommitHash,
 		sess.MessageCount, sess.Status, sess.IngestedAt.UTC(), sess.CreatedAt.UTC(), sess.UpdatedAt.UTC(),
 		sess.SourceFingerprint,
@@ -186,12 +187,12 @@ func (a *Adapter) GetSession(ctx context.Context, id domain.ID) (domain.Session,
 	return scanSession(db.QueryRowContext(ctx, sessionSelect+` WHERE id = $1`, id))
 }
 
-func (a *Adapter) GetSessionBySource(ctx context.Context, tool domain.SessionTool, sourcePath string) (domain.Session, error) {
+func (a *Adapter) GetSessionBySource(ctx context.Context, agent string, sourcePath string) (domain.Session, error) {
 	db, err := a.conn()
 	if err != nil {
 		return domain.Session{}, err
 	}
-	return scanSession(db.QueryRowContext(ctx, sessionSelect+` WHERE tool = $1 AND source_path = $2`, tool, sourcePath))
+	return scanSession(db.QueryRowContext(ctx, sessionSelect+` WHERE agent = $1 AND source_path = $2`, agent, sourcePath))
 }
 
 func (a *Adapter) ListSessions(ctx context.Context, filter storage.SessionFilter) ([]domain.Session, error) {
@@ -205,9 +206,13 @@ func (a *Adapter) ListSessions(ctx context.Context, filter storage.SessionFilter
 		args = append(args, filter.RepoID)
 		where = append(where, fmt.Sprintf("repo_id = $%d", len(args)))
 	}
-	if filter.Tool != "" {
-		args = append(args, filter.Tool)
-		where = append(where, fmt.Sprintf("tool = $%d", len(args)))
+	if filter.Agent != "" {
+		args = append(args, filter.Agent)
+		where = append(where, fmt.Sprintf("agent = $%d", len(args)))
+	}
+	if filter.Kind != "" {
+		args = append(args, filter.Kind)
+		where = append(where, fmt.Sprintf("kind = $%d", len(args)))
 	}
 	if filter.Status != "" {
 		args = append(args, filter.Status)
@@ -328,7 +333,7 @@ func (a *Adapter) ListSessionEvents(ctx context.Context, filter storage.SessionE
 	return out, rows.Err()
 }
 
-const sessionSelect = `SELECT id, repo_id, tool, source_path, external_id, started_at, ended_at,
+const sessionSelect = `SELECT id, repo_id, agent, kind, source_path, external_id, started_at, ended_at,
 	branch, commit_hash, message_count, status, ingested_at, created_at, updated_at,
 	source_fingerprint FROM sessions`
 
@@ -336,7 +341,7 @@ func scanSession(s rowScanner) (domain.Session, error) {
 	var sess domain.Session
 	var ended sql.NullTime
 	err := s.Scan(
-		&sess.ID, &sess.RepoID, &sess.Tool, &sess.SourcePath, &sess.ExternalID,
+		&sess.ID, &sess.RepoID, &sess.Agent, &sess.Kind, &sess.SourcePath, &sess.ExternalID,
 		&sess.StartedAt, &ended, &sess.Branch, &sess.CommitHash, &sess.MessageCount,
 		&sess.Status, &sess.IngestedAt, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.SourceFingerprint,

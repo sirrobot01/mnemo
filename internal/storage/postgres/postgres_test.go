@@ -12,7 +12,7 @@ import (
 
 func TestSanitizeSessionStripsAbsolutePath(t *testing.T) {
 	in := domain.Session{
-		ID: "sess_1", RepoID: "repo_1", Tool: domain.SessionToolClaude,
+		ID: "sess_1", RepoID: "repo_1", Agent: "claude", Kind: domain.SessionKindClaude,
 		SourcePath: "/Users/alice/secret-project/.claude/projects/x/s.jsonl",
 		Status:     domain.SessionStatusIngested, Branch: "main",
 		StartedAt: time.Now(), IngestedAt: time.Now(),
@@ -21,7 +21,7 @@ func TestSanitizeSessionStripsAbsolutePath(t *testing.T) {
 	if out.SourcePath != "s.jsonl" {
 		t.Fatalf("source path not stripped: %q", out.SourcePath)
 	}
-	if out.Branch != "main" || out.Tool != domain.SessionToolClaude {
+	if out.Branch != "main" || out.Kind != domain.SessionKindClaude {
 		t.Fatalf("non-sensitive metadata must be preserved: %+v", out)
 	}
 	// Must still satisfy domain validation (SaveSession validates first).

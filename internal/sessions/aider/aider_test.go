@@ -17,8 +17,8 @@ func TestAiderDiscoverAndIngest(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	ad := New()
-	if ad.Tool() != domain.SessionToolAider {
-		t.Fatalf("tool = %s", ad.Tool())
+	if ad.Kind() != domain.SessionKindAider {
+		t.Fatalf("tool = %s", ad.Kind())
 	}
 	ds, err := ad.Discover(context.Background(), repo)
 	if err != nil || len(ds) != 1 {
@@ -40,6 +40,20 @@ func TestAiderNoHistory(t *testing.T) {
 	ds, err := New().Discover(context.Background(), t.TempDir())
 	if err != nil || len(ds) != 0 {
 		t.Fatalf("expected no discoveries, got %+v err=%v", ds, err)
+	}
+}
+
+func TestAiderWatchDirs(t *testing.T) {
+	repo := t.TempDir()
+	dirs, err := New().WatchDirs(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("watch dirs: %v", err)
+	}
+	if len(dirs) != 1 {
+		t.Fatalf("watch dirs = %+v", dirs)
+	}
+	if got, want := dirs[0], repo; got != want {
+		t.Fatalf("watch dir = %q, want %q", got, want)
 	}
 }
 

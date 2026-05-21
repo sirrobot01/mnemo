@@ -354,7 +354,7 @@ func titleFor(sess domain.Session) string {
 		id = id[:12]
 	}
 	if id == "" {
-		id = string(sess.Tool)
+		id = sess.Agent
 	}
 	return "Session " + id
 }

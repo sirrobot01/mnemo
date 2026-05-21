@@ -15,10 +15,10 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	postgresmigrate "github.com/golang-migrate/migrate/v4/database/postgres"
-	sqlite3migrate "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed sqlite/*.sql postgres/*.sql
@@ -111,6 +111,29 @@ func List(databaseType string) ([]Migration, error) {
 	return migrations, nil
 }
 
+func PendingCount(databaseType string, version uint, hasVersion bool) (int, error) {
+	plan := PlanFor(databaseType)
+	entries, err := fs.ReadDir(files, plan.DatabaseType)
+	if err != nil {
+		return 0, err
+	}
+
+	pending := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".up.sql") {
+			continue
+		}
+		migrationVersion, err := strconv.ParseUint(parseMigrationVersion(entry.Name()), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse migration version %q: %w", entry.Name(), err)
+		}
+		if !hasVersion || uint(migrationVersion) > version {
+			pending++
+		}
+	}
+	return pending, nil
+}
+
 func ApplySQLite(ctx context.Context, dsn string) (ApplyResult, error) {
 	before, err := StatusSQLite(ctx, dsn)
 	if err != nil {
@@ -166,37 +189,43 @@ func ApplyPostgres(ctx context.Context, dsn string) (ApplyResult, error) {
 }
 
 func StatusSQLite(ctx context.Context, dsn string) (Status, error) {
-	instance, closeFn, err := newSQLiteMigrator(ctx, dsn)
-	if err != nil {
-		return Status{}, err
-	}
-	defer closeFn()
-
 	all, err := List("sqlite")
 	if err != nil {
 		return Status{}, err
 	}
 
-	version, dirty, err := instance.Version()
-	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+	if _, err := os.Stat(dsn); errors.Is(err, os.ErrNotExist) {
+		return statusFromVersion(all, 0, false, false)
+	} else if err != nil {
 		return Status{}, err
 	}
 
-	status := Status{Version: version, Dirty: dirty}
-	for _, migration := range all {
-		migrationVersion, err := strconv.ParseUint(migration.Version, 10, 64)
-		if err != nil {
-			return Status{}, fmt.Errorf("parse migration version %q: %w", migration.Version, err)
-		}
-
-		if !errors.Is(err, migrate.ErrNilVersion) && uint(migrationVersion) <= version {
-			status.Applied = append(status.Applied, migration)
-		} else {
-			status.Pending = append(status.Pending, migration)
-		}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return Status{}, err
+	}
+	defer db.Close()
+	if err := db.PingContext(ctx); err != nil {
+		return Status{}, err
 	}
 
-	return status, nil
+	var tableCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&tableCount); err != nil {
+		return Status{}, err
+	}
+	if tableCount == 0 {
+		return statusFromVersion(all, 0, false, false)
+	}
+
+	var version uint
+	var dirty bool
+	if err := db.QueryRowContext(ctx, `SELECT version, dirty FROM schema_migrations LIMIT 1`).Scan(&version, &dirty); errors.Is(err, sql.ErrNoRows) {
+		return statusFromVersion(all, 0, false, false)
+	} else if err != nil {
+		return Status{}, err
+	}
+
+	return statusFromVersion(all, version, dirty, true)
 }
 
 func StatusPostgres(ctx context.Context, dsn string) (Status, error) {
@@ -216,6 +245,10 @@ func StatusPostgres(ctx context.Context, dsn string) (Status, error) {
 		return Status{}, err
 	}
 
+	return statusFromVersion(all, version, dirty, !errors.Is(err, migrate.ErrNilVersion))
+}
+
+func statusFromVersion(all []Migration, version uint, dirty bool, hasVersion bool) (Status, error) {
 	status := Status{Version: version, Dirty: dirty}
 	for _, migration := range all {
 		migrationVersion, err := strconv.ParseUint(migration.Version, 10, 64)
@@ -223,7 +256,7 @@ func StatusPostgres(ctx context.Context, dsn string) (Status, error) {
 			return Status{}, fmt.Errorf("parse migration version %q: %w", migration.Version, err)
 		}
 
-		if !errors.Is(err, migrate.ErrNilVersion) && uint(migrationVersion) <= version {
+		if hasVersion && uint(migrationVersion) <= version {
 			status.Applied = append(status.Applied, migration)
 		} else {
 			status.Pending = append(status.Pending, migration)
@@ -243,6 +276,11 @@ func parseMigrationName(filename string) (string, string) {
 	return filename, filename
 }
 
+func parseMigrationVersion(filename string) string {
+	version, _ := parseMigrationName(filename)
+	return version
+}
+
 func newSQLiteMigrator(ctx context.Context, dsn string) (*migrate.Migrate, func(), error) {
 	if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
 		return nil, nil, err
@@ -253,7 +291,7 @@ func newSQLiteMigrator(ctx context.Context, dsn string) (*migrate.Migrate, func(
 		return nil, nil, err
 	}
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		source.Close()
 		return nil, nil, err
@@ -264,14 +302,14 @@ func newSQLiteMigrator(ctx context.Context, dsn string) (*migrate.Migrate, func(
 		return nil, nil, err
 	}
 
-	driver, err := sqlite3migrate.WithInstance(db, &sqlite3migrate.Config{})
+	driver, err := sqlitemigrate.WithInstance(db, &sqlitemigrate.Config{})
 	if err != nil {
 		source.Close()
 		db.Close()
 		return nil, nil, err
 	}
 
-	instance, err := migrate.NewWithInstance("iofs", source, "sqlite3", driver)
+	instance, err := migrate.NewWithInstance("iofs", source, "sqlite", driver)
 	if err != nil {
 		source.Close()
 		db.Close()

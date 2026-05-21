@@ -36,8 +36,8 @@ func TestDiscoverAndIngest(t *testing.T) {
 	}
 
 	adapter := New(home)
-	if adapter.Tool() != domain.SessionToolClaude {
-		t.Fatalf("Tool = %s, want claude", adapter.Tool())
+	if adapter.Kind() != domain.SessionKindClaude {
+		t.Fatalf("Tool = %s, want claude", adapter.Kind())
 	}
 
 	discoveries, err := adapter.Discover(context.Background(), repoRoot)

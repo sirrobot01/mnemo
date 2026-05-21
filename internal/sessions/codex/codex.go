@@ -33,7 +33,7 @@ type Adapter struct {
 
 func New(homeDir string) *Adapter { return &Adapter{HomeDir: homeDir} }
 
-func (a *Adapter) Tool() domain.SessionTool { return domain.SessionToolCodex }
+func (a *Adapter) Kind() domain.SessionKind { return domain.SessionKindCodex }
 
 func (a *Adapter) home() (string, error) {
 	if a.HomeDir != "" {
@@ -124,7 +124,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		return nil, err
 	}
 
-	discoveries := []sessions.Discovery{}
+	var discoveries []sessions.Discovery
 	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -147,7 +147,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 			id = strings.TrimSuffix(d.Name(), ".jsonl")
 		}
 		discoveries = append(discoveries, sessions.Discovery{
-			Tool:       domain.SessionToolCodex,
+			Kind:       domain.SessionKindCodex,
 			SourcePath: path,
 			ExternalID: id,
 		})
@@ -209,14 +209,14 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 	now := time.Now().UTC()
 	session := domain.Session{
 		SourcePath: sourcePath,
-		Tool:       domain.SessionToolCodex,
+		Kind:       domain.SessionKindCodex,
 		ExternalID: strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl"),
 		Status:     domain.SessionStatusIngested,
 		IngestedAt: now,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	events := []domain.SessionEvent{}
+	var events []domain.SessionEvent
 	var firstTs, lastTs time.Time
 	messageCount, sequence := 0, 0
 
@@ -350,7 +350,7 @@ func fromRaw(raw json.RawMessage) string {
 	}
 	var blocks []contentBlock
 	if json.Unmarshal(raw, &blocks) == nil {
-		parts := []string{}
+		var parts []string
 		for _, b := range blocks {
 			if b.Text != "" {
 				parts = append(parts, b.Text)
@@ -382,5 +382,5 @@ func (a *Adapter) WatchDirs(ctx context.Context, repoRoot string) ([]string, err
 	return []string{dir}, nil
 }
 
-var _ sessions.Adapter = (*Adapter)(nil)
+var _ sessions.Provider = (*Adapter)(nil)
 var _ sessions.DirWatcher = (*Adapter)(nil)

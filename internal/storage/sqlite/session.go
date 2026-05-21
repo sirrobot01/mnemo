@@ -25,7 +25,8 @@ func (a *Adapter) SaveSession(ctx context.Context, session domain.Session) error
 		`INSERT INTO sessions (
 			id,
 			repo_id,
-			tool,
+			agent,
+			kind,
 			source_path,
 			external_id,
 			started_at,
@@ -38,10 +39,11 @@ func (a *Adapter) SaveSession(ctx context.Context, session domain.Session) error
 			created_at,
 			updated_at,
 			source_fingerprint
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			repo_id = excluded.repo_id,
-			tool = excluded.tool,
+			agent = excluded.agent,
+			kind = excluded.kind,
 			source_path = excluded.source_path,
 			external_id = excluded.external_id,
 			started_at = excluded.started_at,
@@ -55,7 +57,8 @@ func (a *Adapter) SaveSession(ctx context.Context, session domain.Session) error
 			source_fingerprint = excluded.source_fingerprint`,
 		session.ID,
 		session.RepoID,
-		session.Tool,
+		session.Agent,
+		session.Kind,
 		session.SourcePath,
 		session.ExternalID,
 		formatTime(session.StartedAt),
@@ -78,23 +81,23 @@ func (a *Adapter) GetSession(ctx context.Context, id domain.ID) (domain.Session,
 	}
 	return scanSession(a.db.QueryRowContext(
 		ctx,
-		`SELECT id, repo_id, tool, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
+		`SELECT id, repo_id, agent, kind, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
 		FROM sessions
 		WHERE id = ?`,
 		id,
 	))
 }
 
-func (a *Adapter) GetSessionBySource(ctx context.Context, tool domain.SessionTool, sourcePath string) (domain.Session, error) {
+func (a *Adapter) GetSessionBySource(ctx context.Context, agent string, sourcePath string) (domain.Session, error) {
 	if a.db == nil {
 		return domain.Session{}, fmt.Errorf("sqlite adapter is not open")
 	}
 	return scanSession(a.db.QueryRowContext(
 		ctx,
-		`SELECT id, repo_id, tool, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
+		`SELECT id, repo_id, agent, kind, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
 		FROM sessions
-		WHERE tool = ? AND source_path = ?`,
-		tool, sourcePath,
+		WHERE agent = ? AND source_path = ?`,
+		agent, sourcePath,
 	))
 }
 
@@ -109,9 +112,13 @@ func (a *Adapter) ListSessions(ctx context.Context, filter storage.SessionFilter
 		where = append(where, "repo_id = ?")
 		args = append(args, filter.RepoID)
 	}
-	if filter.Tool != "" {
-		where = append(where, "tool = ?")
-		args = append(args, filter.Tool)
+	if filter.Agent != "" {
+		where = append(where, "agent = ?")
+		args = append(args, filter.Agent)
+	}
+	if filter.Kind != "" {
+		where = append(where, "kind = ?")
+		args = append(args, filter.Kind)
 	}
 	if filter.Status != "" {
 		where = append(where, "status = ?")
@@ -130,7 +137,7 @@ func (a *Adapter) ListSessions(ctx context.Context, filter storage.SessionFilter
 
 	rows, err := a.db.QueryContext(
 		ctx,
-		`SELECT id, repo_id, tool, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
+		`SELECT id, repo_id, agent, kind, source_path, external_id, started_at, ended_at, branch, commit_hash, message_count, status, ingested_at, created_at, updated_at, source_fingerprint
 		FROM sessions `+whereSQL+`
 		ORDER BY started_at DESC, id ASC
 		LIMIT ? OFFSET ?`,
@@ -293,7 +300,8 @@ func scanSession(scanner rowScanner) (domain.Session, error) {
 	err := scanner.Scan(
 		&session.ID,
 		&session.RepoID,
-		&session.Tool,
+		&session.Agent,
+		&session.Kind,
 		&session.SourcePath,
 		&session.ExternalID,
 		&startedAt,

@@ -1,0 +1,56 @@
+version: 2
+
+project_name: mnemo
+
+before:
+  hooks:
+    - npm --prefix web ci
+    - npm --prefix web run build
+
+builds:
+  - id: mnemo
+    main: ./cmd/mnemo
+    binary: mnemo
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - go_first_class
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/sirrobot01/mnemo/internal/cli.version={{ .Version }}
+
+archives:
+  - id: mnemo
+    builds:
+      - mnemo
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{- with .Arm }}v{{ . }}{{ end }}
+      {{- with .Mips }}_{{ . }}{{ end }}
+      {{- with .Amd64 }}{{ if not (eq . "v1") }}_{{ . }}{{ end }}{{ end }}
+    files:
+      - README.md
+      - docs/*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: sirrobot01
+    name: mnemo
+  prerelease: auto

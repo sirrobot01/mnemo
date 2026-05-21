@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirrobot01/mnemo/internal/domain"
 	"github.com/sirrobot01/mnemo/internal/storage"
+	_ "modernc.org/sqlite"
 )
 
 var ErrNotFound = storage.ErrNotFound
@@ -22,6 +22,12 @@ var ErrNotFound = storage.ErrNotFound
 type Adapter struct {
 	DSN string
 	db  *sql.DB
+}
+
+type MigrationState struct {
+	Version uint
+	Dirty   bool
+	Exists  bool
 }
 
 func New(dsn string) *Adapter {
@@ -33,7 +39,7 @@ func Open(ctx context.Context, dsn string) (*Adapter, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +65,29 @@ func (a *Adapter) Close() error {
 		return nil
 	}
 	return a.db.Close()
+}
+
+func (a *Adapter) MigrationState(ctx context.Context) (MigrationState, error) {
+	if a.db == nil {
+		return MigrationState{}, fmt.Errorf("sqlite adapter is not open")
+	}
+
+	var tableCount int
+	if err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&tableCount); err != nil {
+		return MigrationState{}, err
+	}
+	if tableCount == 0 {
+		return MigrationState{}, nil
+	}
+
+	var state MigrationState
+	if err := a.db.QueryRowContext(ctx, `SELECT version, dirty FROM schema_migrations LIMIT 1`).Scan(&state.Version, &state.Dirty); errors.Is(err, sql.ErrNoRows) {
+		return MigrationState{}, nil
+	} else if err != nil {
+		return MigrationState{}, err
+	}
+	state.Exists = true
+	return state, nil
 }
 
 func (a *Adapter) CreateRepository(ctx context.Context, repository domain.Repository) error {

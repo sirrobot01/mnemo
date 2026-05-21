@@ -11,7 +11,9 @@ import (
 	"github.com/sirrobot01/mnemo/internal/app/statesvc"
 	"github.com/sirrobot01/mnemo/internal/app/tasksvc"
 	"github.com/sirrobot01/mnemo/internal/domain"
+	"github.com/sirrobot01/mnemo/internal/config"
 	"github.com/sirrobot01/mnemo/internal/migrations"
+	"github.com/sirrobot01/mnemo/internal/sessions"
 	"github.com/sirrobot01/mnemo/internal/sessions/claude"
 	"github.com/sirrobot01/mnemo/internal/sessions/codex"
 	"github.com/sirrobot01/mnemo/internal/storage/sqlite"
@@ -65,7 +67,17 @@ func TestClaudeThenCodexSingleTask(t *testing.T) {
 		t.Fatalf("write codex: %v", err)
 	}
 
-	isvc := ingestsvc.New(repo, a, claude.New(cHome+"/.claude"), codex.New(xHome))
+	reg, err := sessions.NewRegistry(
+		[]config.AgentConfig{{Name: "claude", Kind: "claude"}, {Name: "codex", Kind: "codex"}},
+		map[domain.SessionKind]sessions.Provider{
+			domain.SessionKindClaude: claude.New(cHome + "/.claude"),
+			domain.SessionKindCodex:  codex.New(xHome),
+		},
+	)
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	isvc := ingestsvc.New(repo, a, reg)
 	if _, err := isvc.Import(ctx); err != nil {
 		t.Fatalf("import: %v", err)
 	}

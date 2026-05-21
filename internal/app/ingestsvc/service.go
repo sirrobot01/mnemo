@@ -1,8 +1,7 @@
 // Package ingestsvc owns session ingestion: it drives per-tool
 // sessions.Adapter implementations, runs every event through the secret
 // scanner before persistence, and writes idempotently so re-ingesting the
-// same source file is a no-op. It has no dependency on proposals — the
-// retired memory/rules pipeline is gone.
+// same source file is a no-op.
 package ingestsvc
 
 import (
@@ -18,20 +17,22 @@ import (
 	"github.com/sirrobot01/mnemo/internal/storage"
 )
 
-// Service ingests sessions for one repository.
+// Service ingests sessions for one repository, driven by the configured
+// agent registry.
 type Service struct {
 	repo     domain.Repository
 	store    storage.SessionStore
-	adapters []sessions.Adapter
+	registry *sessions.Registry
 }
 
-func New(repo domain.Repository, store storage.SessionStore, adapters ...sessions.Adapter) *Service {
-	return &Service{repo: repo, store: store, adapters: adapters}
+func New(repo domain.Repository, store storage.SessionStore, registry *sessions.Registry) *Service {
+	return &Service{repo: repo, store: store, registry: registry}
 }
 
-// ImportResult summarizes one adapter sweep.
+// ImportResult summarizes one agent sweep.
 type ImportResult struct {
-	Tool             string `json:"tool"`
+	Agent            string `json:"agent"`
+	Kind             string `json:"kind"`
 	Discovered       int    `json:"discovered"`
 	Imported         int    `json:"imported"`
 	Unchanged        int    `json:"unchanged"`
@@ -51,21 +52,22 @@ func fingerprint(path string) string {
 	return fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 }
 
-// Import sweeps every configured adapter for the repository root. One broken
-// adapter does not abort the others — its error is returned alongside the
+// Import sweeps every configured agent for the repository root. One broken
+// agent does not abort the others — its error is returned alongside the
 // successful results so the caller can surface it without losing progress.
 func (s *Service) Import(ctx context.Context) ([]ImportResult, error) {
 	ignore, err := config.LoadIgnore(s.repo.RootPath)
 	if err != nil {
 		return nil, err
 	}
-	results := make([]ImportResult, 0, len(s.adapters))
+	agents := s.registry.Agents()
+	results := make([]ImportResult, 0, len(agents))
 	var firstErr error
-	for _, adapter := range s.adapters {
-		if ignore.SkipTool(string(adapter.Tool())) {
+	for _, agent := range agents {
+		if ignore.SkipAgent(agent.Name) || ignore.SkipAgent(string(agent.Kind)) {
 			continue
 		}
-		res, err := s.importAdapter(ctx, adapter, ignore)
+		res, err := s.importAgent(ctx, agent, ignore)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -77,9 +79,9 @@ func (s *Service) Import(ctx context.Context) ([]ImportResult, error) {
 	return results, firstErr
 }
 
-func (s *Service) importAdapter(ctx context.Context, adapter sessions.Adapter, ignore *config.Ignore) (ImportResult, error) {
-	res := ImportResult{Tool: string(adapter.Tool())}
-	discoveries, err := adapter.Discover(ctx, s.repo.RootPath)
+func (s *Service) importAgent(ctx context.Context, agent *sessions.Agent, ignore *config.Ignore) (ImportResult, error) {
+	res := ImportResult{Agent: agent.Name, Kind: string(agent.Kind)}
+	discoveries, err := agent.Discover(ctx, s.repo.RootPath)
 	if err != nil {
 		return res, err
 	}
@@ -91,7 +93,7 @@ func (s *Service) importAdapter(ctx context.Context, adapter sessions.Adapter, i
 			continue
 		}
 
-		sessionID := domain.DeterministicID(domain.PrefixSession, string(adapter.Tool()), d.SourcePath)
+		sessionID := domain.DeterministicID(domain.PrefixSession, agent.Name, d.SourcePath)
 		fp := fingerprint(d.SourcePath)
 		if fp != "" {
 			if existing, err := s.store.GetSession(ctx, sessionID); err == nil && existing.SourceFingerprint == fp {
@@ -103,7 +105,7 @@ func (s *Service) importAdapter(ctx context.Context, adapter sessions.Adapter, i
 			}
 		}
 
-		ing, err := adapter.Ingest(ctx, d.SourcePath)
+		ing, err := agent.Ingest(ctx, d.SourcePath)
 		if err != nil {
 			return res, err
 		}
@@ -111,6 +113,8 @@ func (s *Service) importAdapter(ctx context.Context, adapter sessions.Adapter, i
 		sess := ing.Session
 		sess.RepoID = s.repo.ID
 		sess.ID = sessionID
+		sess.Agent = agent.Name
+		sess.Kind = agent.Kind
 		sess.SourceFingerprint = fp
 
 		kept := make([]domain.SessionEvent, 0, len(ing.Events))

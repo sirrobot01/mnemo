@@ -21,7 +21,7 @@ func TestRootCommandSurface(t *testing.T) {
 			t.Errorf("missing command %q", want)
 		}
 	}
-	// The retired memory/rules product surface must be gone.
+	// Only the current command surface should be registered.
 	for _, gone := range []string{"scan", "propose", "approve", "remember", "sync", "sessions"} {
 		if got[gone] {
 			t.Errorf("removed command %q still registered", gone)

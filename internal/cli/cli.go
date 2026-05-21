@@ -11,8 +11,11 @@ import (
 	"github.com/sirrobot01/mnemo/internal/config"
 	"github.com/sirrobot01/mnemo/internal/logging"
 	"github.com/sirrobot01/mnemo/internal/migrations"
+	reporoot "github.com/sirrobot01/mnemo/internal/repo"
 	"github.com/spf13/cobra"
 )
+
+var version = "dev"
 
 // Execute is the production entrypoint for the mnemo binary. It builds the
 // root command, runs it against context.Background(), and exits non-zero on
@@ -54,7 +57,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		Short:         "cross-agent memory for AI coding — switch tools without losing your place",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       "dev",
+		Version:       version,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			parsedOutputFormat, err := output.ParseFormat(outputFormat)
 			if err != nil {
@@ -90,14 +93,17 @@ func NewRootCommand() (*cobra.Command, error) {
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", logLevel, "log level: debug, info, warn, or error")
 	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", logFormat, "log format: text or json")
 
+	var initAgents []string
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize Mnemo in a repository",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInit(cmd, root)
+			return runInit(cmd, root, initAgents)
 		},
 	}
+	initCmd.Flags().StringSliceVar(&initAgents, "agents", nil,
+		"known agents to register (e.g. --agents codex,claude); default registers all known agents")
 
 	dbCmd := &cobra.Command{
 		Use:   "db",
@@ -139,13 +145,15 @@ func NewRootCommand() (*cobra.Command, error) {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return output.FromCommand(cmd).Line("mnemo dev")
+			return output.FromCommand(cmd).Line(fmt.Sprintf("mnemo %s", version))
 		},
 	}
 
 	dbCmd.AddCommand(dbMigrateCmd, dbStatusCmd, dbResetCmd)
 	rootCmd.AddCommand(
 		initCmd,
+		newAgentsCommand(&root),
+		newContextCommand(&root),
 		newIngestCommand(&root),
 		newWatchCommand(&root),
 		newTaskCommand(&root),
@@ -153,6 +161,7 @@ func NewRootCommand() (*cobra.Command, error) {
 		newStatusCommand(&root),
 		newForgetCommand(&root),
 		newServeCommand(&root),
+		newMCPCommand(&root),
 		dbCmd,
 		versionCmd,
 	)
@@ -160,36 +169,64 @@ func NewRootCommand() (*cobra.Command, error) {
 	return rootCmd, nil
 }
 
-func runInit(cmd *cobra.Command, root string) error {
+func runInit(cmd *cobra.Command, start string, agents []string) error {
 	ctx := cmd.Context()
 	logger := logging.FromContext(ctx)
-	path := config.DefaultPath(root)
-	if err := config.Save(path, config.Default()); err != nil {
+
+	info, err := reporoot.Resolve(start)
+	if err != nil {
 		return err
 	}
-	_, cleanup, err := openLocalStore(ctx, root)
+
+	// Machine-level config (database) lives once under the Mnemo home
+	// and is never clobbered by init in a second project.
+	if err := config.SaveGlobal(config.GlobalConfigPath(), config.Default()); err != nil {
+		return err
+	}
+
+	// Per-project config carries the agent registry and contexts.
+	projectCfg := config.Config{Agents: defaultAgentConfigs(agents)}
+	path := config.DefaultPath(info.Root)
+	if err := config.SaveProject(path, projectCfg); err != nil {
+		return err
+	}
+
+	cfg, err := config.LoadLayered(info.Root)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if err := migrateLocalStore(ctx, cfg); err != nil {
+		return err
+	}
+
+	project := localProject{info: info, cfg: cfg, dsn: resolveDSN(cfg.Database.DSN)}
+	_, cleanup, err := openResolvedLocalStore(ctx, project, localStoreOptions{})
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	logger.InfoContext(ctx, "initialized repository", "root", root, "config_path", path)
+	logger.InfoContext(ctx, "initialized repository", "root", info.Root, "identity", info.Identity, "config_path", path)
 	return output.FromCommand(cmd).Initialized(path)
 }
 
-func runDBMigrate(cmd *cobra.Command, root string) error {
+func runDBMigrate(cmd *cobra.Command, start string) error {
 	ctx := cmd.Context()
 	logger := logging.FromContext(ctx)
-	cfg, err := config.Load(config.DefaultPath(root))
+	info, err := reporoot.Resolve(start)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.LoadLayered(info.Root)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	plan := migrations.PlanFor(cfg.Database.Type)
+	plan := migrations.PlanFor(string(cfg.Database.Type))
 	logger.InfoContext(ctx, "running database migrations", "database", plan.DatabaseType)
 	var result migrations.ApplyResult
 	switch plan.DatabaseType {
 	case "sqlite":
-		result, err = migrations.ApplySQLite(ctx, resolveDSN(root, cfg.Database.DSN))
+		result, err = migrations.ApplySQLite(ctx, resolveDSN(cfg.Database.DSN))
 	case "postgres":
 		result, err = migrations.ApplyPostgres(ctx, cfg.Database.DSN)
 	default:
@@ -202,20 +239,24 @@ func runDBMigrate(cmd *cobra.Command, root string) error {
 	return output.FromCommand(cmd).MigrationResult(plan.Description, len(result.Applied), len(result.Skipped))
 }
 
-func runDBStatus(cmd *cobra.Command, root string) error {
+func runDBStatus(cmd *cobra.Command, start string) error {
 	ctx := cmd.Context()
 	logger := logging.FromContext(ctx)
-	cfg, err := config.Load(config.DefaultPath(root))
+	info, err := reporoot.Resolve(start)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.LoadLayered(info.Root)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	plan := migrations.PlanFor(cfg.Database.Type)
+	plan := migrations.PlanFor(string(cfg.Database.Type))
 	logger.DebugContext(ctx, "checking database status", "database", plan.DatabaseType)
 	applied := 0
 	pending := 0
 	switch plan.DatabaseType {
 	case "sqlite":
-		status, err := migrations.StatusSQLite(ctx, resolveDSN(root, cfg.Database.DSN))
+		status, err := migrations.StatusSQLite(ctx, resolveDSN(cfg.Database.DSN))
 		if err != nil {
 			return err
 		}
@@ -229,12 +270,16 @@ func runDBStatus(cmd *cobra.Command, root string) error {
 		applied = len(status.Applied)
 		pending = len(status.Pending)
 	}
-	return output.FromCommand(cmd).MigrationStatus(cfg.Database.Type, cfg.Database.DSN, plan.Description, applied, pending)
+	return output.FromCommand(cmd).MigrationStatus(string(cfg.Database.Type), cfg.Database.DSN, plan.Description, applied, pending)
 }
 
-func resolveDSN(root string, dsn string) string {
+// resolveDSN resolves the configured database DSN. The default is already an
+// absolute path under the Mnemo home; a relative override is interpreted
+// against the machine-level Mnemo home, not the project (the database is
+// global, not per-project).
+func resolveDSN(dsn string) string {
 	if filepath.IsAbs(dsn) {
 		return dsn
 	}
-	return filepath.Join(root, dsn)
+	return filepath.Join(config.GlobalDir(), dsn)
 }

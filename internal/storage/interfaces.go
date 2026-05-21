@@ -20,7 +20,8 @@ type RepositoryStore interface {
 
 type SessionFilter struct {
 	RepoID domain.ID
-	Tool   domain.SessionTool
+	Agent  string
+	Kind   domain.SessionKind
 	Status domain.SessionStatus
 	Limit  int
 	Offset int
@@ -39,7 +40,7 @@ type SessionEventFilter struct {
 type SessionStore interface {
 	SaveSession(ctx context.Context, session domain.Session) error
 	GetSession(ctx context.Context, id domain.ID) (domain.Session, error)
-	GetSessionBySource(ctx context.Context, tool domain.SessionTool, sourcePath string) (domain.Session, error)
+	GetSessionBySource(ctx context.Context, agent string, sourcePath string) (domain.Session, error)
 	ListSessions(ctx context.Context, filter SessionFilter) ([]domain.Session, error)
 	DeleteSession(ctx context.Context, id domain.ID) error
 	AppendSessionEvents(ctx context.Context, sessionID domain.ID, events []domain.SessionEvent) error
@@ -63,6 +64,16 @@ type TaskStore interface {
 	DetachSession(ctx context.Context, taskID, sessionID domain.ID) error
 	ListTaskSessions(ctx context.Context, taskID domain.ID) ([]domain.ID, error)
 	DeleteTask(ctx context.Context, id domain.ID) error
+}
+
+// AuthStore persists web/API accounts and bearer tokens for `mnemo serve`.
+type AuthStore interface {
+	CreateUser(ctx context.Context, user domain.User) error
+	GetUserByEmail(ctx context.Context, email string) (domain.User, error)
+	GetUserByID(ctx context.Context, id domain.ID) (domain.User, error)
+	CreateToken(ctx context.Context, token domain.AuthToken) error
+	GetToken(ctx context.Context, token string) (domain.AuthToken, error)
+	DeleteToken(ctx context.Context, token string) error
 }
 
 // WorkingStateStore persists the versioned compiled state of play per task.

@@ -1,7 +1,15 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
+// In CI these are injected by actions/configure-pages so the build matches the
+// GitHub Pages URL (e.g. https://<owner>.github.io + /<repo>/). Locally they
+// are unset, so Astro falls back to its default base of '/'.
+const site = process.env.SITE || undefined;
+const base = process.env.BASE_PATH || undefined;
+
 export default defineConfig({
+  site,
+  base,
   integrations: [
     starlight({
       title: 'Mnemo',
@@ -20,7 +28,8 @@ export default defineConfig({
         {
           label: 'Concepts',
           items: [
-            { slug: 'concepts/sessions', label: 'Session ingestion' },
+            { slug: 'concepts/sessions', label: 'Agents and ingestion' },
+            { slug: 'concepts/contexts', label: 'Contexts' },
             { slug: 'concepts/tasks', label: 'Tasks and threading' },
             { slug: 'concepts/state-of-play', label: 'State of play' },
             { slug: 'concepts/resume', label: 'Resume and injection' },
@@ -32,6 +41,7 @@ export default defineConfig({
           items: [
             { slug: 'guides/cli', label: 'CLI workflow' },
             { slug: 'guides/web-ui-api', label: 'Web UI and API' },
+            { slug: 'guides/mcp', label: 'MCP server' },
             { slug: 'guides/configuration', label: 'Configuration' },
           ],
         },

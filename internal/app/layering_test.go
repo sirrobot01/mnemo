@@ -4,9 +4,8 @@
 // (internal/api, internal/cli, internal/ui). They may import the storage
 // interface package, the domain package, the safety package, and other
 // app/*svc packages. This test fails loudly if a future change adds a
-// forbidden import. Post-re-center (R0) there are no service packages yet —
-// they are reintroduced from R1 (ingestsvc) onward — so the test skips
-// rather than failing when none are present.
+// forbidden import. The test skips rather than failing when no service
+// packages are present.
 package app
 
 import (
@@ -68,6 +67,6 @@ func TestServicesDoNotImportConcreteAdapters(t *testing.T) {
 		checked++
 	}
 	if checked == 0 {
-		t.Skip("no internal/app/*svc packages yet (post-re-center R0); reintroduced from R1")
+		t.Skip("no internal/app/*svc packages yet")
 	}
 }

@@ -1,10 +1,19 @@
-DROP TABLE IF EXISTS settings;
+DROP INDEX IF EXISTS idx_auth_tokens_user;
+DROP INDEX IF EXISTS idx_working_states_task;
+DROP INDEX IF EXISTS idx_task_sessions_session;
+DROP INDEX IF EXISTS idx_tasks_last_active;
+DROP INDEX IF EXISTS idx_tasks_repo_status;
+DROP INDEX IF EXISTS idx_session_events_session;
+DROP INDEX IF EXISTS idx_sessions_repo_status;
+DROP INDEX IF EXISTS idx_sessions_repo_agent;
+DROP INDEX IF EXISTS idx_sessions_agent_source;
+DROP INDEX IF EXISTS idx_repositories_root_path;
+
+DROP TABLE IF EXISTS auth_tokens;
 DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS events;
-DROP TABLE IF EXISTS projections;
-DROP TABLE IF EXISTS conflicts;
-DROP TABLE IF EXISTS proposals;
-DROP TABLE IF EXISTS memory_tags;
-DROP TABLE IF EXISTS memory_evidence;
-DROP TABLE IF EXISTS memories;
+DROP TABLE IF EXISTS working_states;
+DROP TABLE IF EXISTS task_sessions;
+DROP TABLE IF EXISTS session_events;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS repositories;

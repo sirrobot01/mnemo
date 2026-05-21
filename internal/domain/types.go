@@ -23,6 +23,23 @@ type Repository struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// User is a web/API account created by the Mnemo server auth flow. Ordinary
+// CLI commands do not create or require users.
+type User struct {
+	ID           ID        `json:"id"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// AuthToken is an opaque bearer token issued by the Mnemo web/API login flow.
+type AuthToken struct {
+	Token     string    `json:"token"`
+	UserID    ID        `json:"user_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Setting struct {
 	ID        ID             `json:"id"`
 	Scope     Scope          `json:"scope"`
@@ -34,15 +51,20 @@ type Setting struct {
 
 // ---------- Sessions (ingestion substrate) ----------
 
-type SessionTool string
+// SessionKind identifies the transcript parser a session was produced by.
+// Kinds are open strings: known kinds ship built-in parsers, and custom
+// agents declare a parser kind of their own. Kind also serves as the "vendor"
+// for cross-vendor egress checks.
+type SessionKind string
 
 const (
-	SessionToolClaude   SessionTool = "claude"
-	SessionToolCodex    SessionTool = "codex"
-	SessionToolCursor   SessionTool = "cursor"
-	SessionToolWindsurf SessionTool = "windsurf"
-	SessionToolAider    SessionTool = "aider"
-	SessionToolContinue SessionTool = "continue"
+	SessionKindClaude   SessionKind = "claude"
+	SessionKindCodex    SessionKind = "codex"
+	SessionKindContinue SessionKind = "continue"
+	SessionKindAider    SessionKind = "aider"
+	SessionKindCursor   SessionKind = "cursor"
+	SessionKindWindsurf SessionKind = "windsurf"
+	SessionKindCopilot  SessionKind = "copilot"
 )
 
 type SessionStatus string
@@ -65,24 +87,27 @@ const (
 )
 
 type Session struct {
-	ID           ID            `json:"id"`
-	RepoID       ID            `json:"repo_id"`
-	Tool         SessionTool   `json:"tool"`
-	SourcePath   string        `json:"source_path"`
-	ExternalID   string        `json:"external_id,omitempty"`
+	ID     ID `json:"id"`
+	RepoID ID `json:"repo_id"`
+	// Agent is the configured agent name this session was ingested for
+	// (project-unique). Kind selects the parser and is the egress vendor.
+	Agent      string      `json:"agent"`
+	Kind       SessionKind `json:"kind"`
+	SourcePath string      `json:"source_path"`
+	ExternalID string      `json:"external_id,omitempty"`
 	// SourceFingerprint is "<modUnixNano>:<size>" of the transcript file at
 	// last ingest. Ingestion skips re-parsing a file whose fingerprint is
 	// unchanged, which is what keeps `mnemo watch` cheap.
-	SourceFingerprint string    `json:"source_fingerprint,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
-	EndedAt      *time.Time    `json:"ended_at,omitempty"`
-	Branch       string        `json:"branch,omitempty"`
-	CommitHash   string        `json:"commit_hash,omitempty"`
-	MessageCount int           `json:"message_count"`
-	Status       SessionStatus `json:"status"`
-	IngestedAt   time.Time     `json:"ingested_at"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
+	SourceFingerprint string        `json:"source_fingerprint,omitempty"`
+	StartedAt         time.Time     `json:"started_at"`
+	EndedAt           *time.Time    `json:"ended_at,omitempty"`
+	Branch            string        `json:"branch,omitempty"`
+	CommitHash        string        `json:"commit_hash,omitempty"`
+	MessageCount      int           `json:"message_count"`
+	Status            SessionStatus `json:"status"`
+	IngestedAt        time.Time     `json:"ingested_at"`
+	CreatedAt         time.Time     `json:"created_at"`
+	UpdatedAt         time.Time     `json:"updated_at"`
 }
 
 type SessionEvent struct {

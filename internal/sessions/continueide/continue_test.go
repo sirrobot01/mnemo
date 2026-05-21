@@ -86,3 +86,15 @@ func TestContinueWorkspaceAltAndFlatMessages(t *testing.T) {
 		t.Fatalf("flat messages not parsed: %+v", ing.Events)
 	}
 }
+
+func TestContinueWatchDirs(t *testing.T) {
+	home := t.TempDir()
+	dirs, err := New(home).WatchDirs(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("watch dirs: %v", err)
+	}
+	want := filepath.Join(home, "sessions")
+	if len(dirs) != 1 || dirs[0] != want {
+		t.Fatalf("watch dirs = %+v, want [%s]", dirs, want)
+	}
+}

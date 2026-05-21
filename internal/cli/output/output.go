@@ -185,7 +185,8 @@ func (r Renderer) MigrationResult(strategy string, applied int, skipped int) err
 }
 
 type IngestResult struct {
-	Tool             string `json:"tool"`
+	Agent            string `json:"agent"`
+	Kind             string `json:"kind"`
 	Discovered       int    `json:"discovered"`
 	Imported         int    `json:"imported"`
 	Unchanged        int    `json:"unchanged"`
@@ -207,8 +208,8 @@ func (r Renderer) IngestResults(results []IngestResult) error {
 	for _, res := range results {
 		if _, err := fmt.Fprintf(
 			r.out,
-			"%s: discovered %d, imported %d, unchanged %d, skipped %d, redacted events %d, redacted sessions %d\n",
-			res.Tool, res.Discovered, res.Imported, res.Unchanged, res.Skipped, res.RedactedEvents, res.RedactedSessions,
+			"%s (%s): discovered %d, imported %d, unchanged %d, skipped %d, redacted events %d, redacted sessions %d\n",
+			res.Agent, res.Kind, res.Discovered, res.Imported, res.Unchanged, res.Skipped, res.RedactedEvents, res.RedactedSessions,
 		); err != nil {
 			return err
 		}

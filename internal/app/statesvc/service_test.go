@@ -34,7 +34,7 @@ func TestCompileExtractsStateOfPlay(t *testing.T) {
 	if err := a.SaveTask(ctx, task); err != nil {
 		t.Fatalf("task: %v", err)
 	}
-	sess := domain.Session{ID: "sess_1", RepoID: repo.ID, Tool: domain.SessionToolClaude, SourcePath: "/x.jsonl", Status: domain.SessionStatusIngested, StartedAt: now, IngestedAt: now, CreatedAt: now, UpdatedAt: now}
+	sess := domain.Session{ID: "sess_1", RepoID: repo.ID, Agent: "claude", Kind: domain.SessionKindClaude, SourcePath: "/x.jsonl", Status: domain.SessionStatusIngested, StartedAt: now, IngestedAt: now, CreatedAt: now, UpdatedAt: now}
 	if err := a.SaveSession(ctx, sess); err != nil {
 		t.Fatalf("sess: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestExtractionQualityHardening(t *testing.T) {
 	if err := a.SaveTask(ctx, task); err != nil {
 		t.Fatalf("task: %v", err)
 	}
-	sess := domain.Session{ID: "sess_q", RepoID: repo.ID, Tool: domain.SessionToolClaude, SourcePath: "/q.jsonl", Status: domain.SessionStatusIngested, StartedAt: now, IngestedAt: now, CreatedAt: now, UpdatedAt: now}
+	sess := domain.Session{ID: "sess_q", RepoID: repo.ID, Agent: "claude", Kind: domain.SessionKindClaude, SourcePath: "/q.jsonl", Status: domain.SessionStatusIngested, StartedAt: now, IngestedAt: now, CreatedAt: now, UpdatedAt: now}
 	if err := a.SaveSession(ctx, sess); err != nil {
 		t.Fatalf("sess: %v", err)
 	}

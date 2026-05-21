@@ -9,11 +9,9 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/sirrobot01/mnemo/internal/app/ingestsvc"
-	"github.com/sirrobot01/mnemo/internal/app/statesvc"
 	"github.com/sirrobot01/mnemo/internal/cli/output"
 	"github.com/sirrobot01/mnemo/internal/domain"
 	"github.com/sirrobot01/mnemo/internal/logging"
-	"github.com/sirrobot01/mnemo/internal/sessions"
 	"github.com/spf13/cobra"
 )
 
@@ -47,13 +45,12 @@ func newWatchCommand(root *string) *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			store, cleanup, err := openLocalStore(ctx, *root)
+			store, cleanup, err := openLocalStoreWithRegistry(ctx, *root)
 			if err != nil {
 				return err
 			}
 			defer cleanup()
 			logger := logging.FromContext(ctx).With("repository", store.repo.ID)
-			adapters := enabledAdapters()
 
 			watcher, err := fsnotify.NewWatcher()
 			if err != nil {
@@ -63,36 +60,47 @@ func newWatchCommand(root *string) *cobra.Command {
 
 			watched := map[string]bool{}
 			addWatches := func() {
-				for _, ad := range adapters {
-					dw, ok := ad.(sessions.DirWatcher)
-					if !ok {
+				dirs, err := store.registry.WatchTargets(ctx, store.repo.RootPath)
+				if err != nil {
+					logger.WarnContext(ctx, "watch-dir resolution failed", "error", err)
+					return
+				}
+				for _, d := range dirs {
+					target := nearestExisting(d)
+					if watched[target] {
 						continue
 					}
-					dirs, err := dw.WatchDirs(ctx, store.repo.RootPath)
-					if err != nil {
-						logger.WarnContext(ctx, "watch-dir resolution failed", "tool", ad.Tool(), "error", err)
+					if err := watcher.Add(target); err != nil {
+						logger.WarnContext(ctx, "could not watch directory", "dir", target, "error", err)
 						continue
 					}
-					for _, d := range dirs {
-						target := nearestExisting(d)
-						if watched[target] {
-							continue
-						}
-						if err := watcher.Add(target); err != nil {
-							logger.WarnContext(ctx, "could not watch directory", "dir", target, "error", err)
-							continue
-						}
-						watched[target] = true
-					}
+					watched[target] = true
 				}
 			}
 			addWatches()
 
 			pipeline := func() {
-				isvc := ingestsvc.New(store.repo, store.adapter, adapters...)
-				if _, err := isvc.Import(ctx); err != nil {
+				isvc := ingestsvc.New(store.repo, store.adapter, store.registry)
+				results, err := isvc.Import(ctx)
+				if err != nil {
 					// One adapter failing must not abort the watch loop.
 					logger.WarnContext(ctx, "ingest error (continuing)", "error", err)
+				}
+				// Only speak up when a sweep actually changed something —
+				// debounced no-op sweeps stay silent.
+				for _, r := range results {
+					if r.Imported == 0 && r.RedactedSessions == 0 {
+						continue
+					}
+					logger.InfoContext(ctx, "ingested sessions",
+						"agent", r.Agent,
+						"kind", r.Kind,
+						"imported", r.Imported,
+						"unchanged", r.Unchanged,
+						"skipped", r.Skipped,
+						"redacted_sessions", r.RedactedSessions,
+						"redacted_events", r.RedactedEvents,
+					)
 				}
 				tsvc := newTaskSvc(store)
 				if _, err := tsvc.Thread(ctx); err != nil {
@@ -107,7 +115,11 @@ func newWatchCommand(root *string) *cobra.Command {
 					logger.WarnContext(ctx, "task list error (continuing)", "error", err)
 					return
 				}
-				ssvc := statesvc.New(store.adapter, store.adapter, store.adapter)
+				ssvc, err := newStateSvc(store)
+				if err != nil {
+					logger.WarnContext(ctx, "state compiler setup error (continuing)", "error", err)
+					return
+				}
 				for _, t := range tasks {
 					if t.Status == domain.TaskStatusDone {
 						continue

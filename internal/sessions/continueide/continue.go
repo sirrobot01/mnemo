@@ -26,7 +26,7 @@ type Adapter struct {
 
 func New(homeDir string) *Adapter { return &Adapter{HomeDir: homeDir} }
 
-func (a *Adapter) Tool() domain.SessionTool { return domain.SessionToolContinue }
+func (a *Adapter) Kind() domain.SessionKind { return domain.SessionKindContinue }
 
 func (a *Adapter) dir() (string, error) {
 	if a.HomeDir != "" {
@@ -102,7 +102,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		}
 		return nil, err
 	}
-	out := []sessions.Discovery{}
+	var out []sessions.Discovery
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -120,7 +120,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		if id == "" {
 			id = strings.TrimSuffix(e.Name(), ".json")
 		}
-		out = append(out, sessions.Discovery{Tool: domain.SessionToolContinue, SourcePath: path, ExternalID: id})
+		out = append(out, sessions.Discovery{Kind: domain.SessionKindContinue, SourcePath: path, ExternalID: id})
 	}
 	return out, nil
 }
@@ -129,7 +129,7 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 	now := time.Now().UTC()
 	session := domain.Session{
 		SourcePath: sourcePath,
-		Tool:       domain.SessionToolContinue,
+		Kind:       domain.SessionKindContinue,
 		ExternalID: strings.TrimSuffix(filepath.Base(sourcePath), ".json"),
 		Status:     domain.SessionStatusIngested,
 		StartedAt:  now,
@@ -144,7 +144,7 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 	if s.SessionID != "" {
 		session.ExternalID = s.SessionID
 	}
-	events := []domain.SessionEvent{}
+	var events []domain.SessionEvent
 	seq, msgs := 0, 0
 	for _, m := range s.turns() {
 		content := extractContent(m.Content)
@@ -191,7 +191,7 @@ func extractContent(raw json.RawMessage) string {
 	}
 	var blocks []block
 	if json.Unmarshal(raw, &blocks) == nil {
-		parts := []string{}
+		var parts []string
 		for _, b := range blocks {
 			if b.Text != "" {
 				parts = append(parts, b.Text)
@@ -202,4 +202,16 @@ func extractContent(raw json.RawMessage) string {
 	return ""
 }
 
-var _ sessions.Adapter = (*Adapter)(nil)
+// WatchDirs returns Continue's sessions directory. The caller watches the
+// nearest existing ancestor, so this still works before Continue creates the
+// sessions directory on a fresh machine.
+func (a *Adapter) WatchDirs(ctx context.Context, repoRoot string) ([]string, error) {
+	dir, err := a.dir()
+	if err != nil {
+		return nil, err
+	}
+	return []string{dir}, nil
+}
+
+var _ sessions.Provider = (*Adapter)(nil)
+var _ sessions.DirWatcher = (*Adapter)(nil)

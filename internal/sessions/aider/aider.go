@@ -24,7 +24,7 @@ type Adapter struct{}
 
 func New() *Adapter { return &Adapter{} }
 
-func (a *Adapter) Tool() domain.SessionTool { return domain.SessionToolAider }
+func (a *Adapter) Kind() domain.SessionKind { return domain.SessionKindAider }
 
 func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Discovery, error) {
 	abs, err := filepath.Abs(repoRoot)
@@ -39,7 +39,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		return nil, err
 	}
 	return []sessions.Discovery{{
-		Tool:       domain.SessionToolAider,
+		Kind:       domain.SessionKindAider,
 		SourcePath: path,
 		ExternalID: "aider",
 	}}, nil
@@ -55,7 +55,7 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 	now := time.Now().UTC()
 	session := domain.Session{
 		SourcePath: sourcePath,
-		Tool:       domain.SessionToolAider,
+		Kind:       domain.SessionKindAider,
 		ExternalID: "aider",
 		Status:     domain.SessionStatusIngested,
 		StartedAt:  now,
@@ -63,7 +63,7 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	events := []domain.SessionEvent{}
+	var events []domain.SessionEvent
 	seq, msgs := 0, 0
 
 	var role domain.SessionEventType
@@ -136,4 +136,16 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 	return sessions.Ingestion{Session: session, Events: events}, nil
 }
 
-var _ sessions.Adapter = (*Adapter)(nil)
+// WatchDirs returns the repository root. Aider writes its chat history file
+// directly there, so watching the root catches changes to
+// .aider.chat.history.md without tailing the whole tree recursively.
+func (a *Adapter) WatchDirs(ctx context.Context, repoRoot string) ([]string, error) {
+	abs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return []string{abs}, nil
+}
+
+var _ sessions.Provider = (*Adapter)(nil)
+var _ sessions.DirWatcher = (*Adapter)(nil)

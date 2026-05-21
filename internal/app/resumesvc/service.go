@@ -21,6 +21,10 @@ type Options struct {
 	// CrossVendorAllowed must be true to render for an agent whose vendor is
 	// not among the sources the state was derived from.
 	CrossVendorAllowed bool
+	// Context is already-resolved, already-scrubbed read-only knowledge
+	// (house rules, AGENTS.md, docs) appended to the handoff so the next
+	// agent sees it. Mnemo never writes back into these sources.
+	Context string
 }
 
 type Rendered struct {
@@ -41,12 +45,12 @@ func localTarget(tool string) bool {
 	}
 }
 
-// Render produces the state-of-play text. sourceTools is the set of tools
-// the task's sessions came from.
-func Render(ws domain.WorkingState, sourceTools []domain.SessionTool, opts Options) (Rendered, error) {
+// Render produces the state-of-play text. sourceKinds is the set of vendor
+// kinds the task's sessions came from; egress to a different vendor is gated.
+func Render(ws domain.WorkingState, sourceKinds []domain.SessionKind, opts Options) (Rendered, error) {
 	if !localTarget(opts.Tool) && !opts.CrossVendorAllowed {
 		fromSource := false
-		for _, st := range sourceTools {
+		for _, st := range sourceKinds {
 			if strings.EqualFold(string(st), strings.TrimSpace(opts.Tool)) {
 				fromSource = true
 				break
@@ -102,6 +106,13 @@ func Render(ws domain.WorkingState, sourceTools []domain.SessionTool, opts Optio
 		b.WriteString("\n## Working hypotheses — UNCONFIRMED, do not treat as fact\n")
 		for _, h := range ws.Hypotheses {
 			fmt.Fprintf(&b, "- %s\n", h.Claim)
+		}
+	}
+	if c := strings.TrimSpace(opts.Context); c != "" {
+		b.WriteString("\n## Context — read-only house rules, do not modify these sources\n")
+		b.WriteString(c)
+		if !strings.HasSuffix(c, "\n") {
+			b.WriteString("\n")
 		}
 	}
 	b.WriteString("<!-- mnemo:resume:end -->\n")

@@ -17,6 +17,7 @@ const (
 	PrefixSessionEvent = "sev"
 	PrefixTask         = "task"
 	PrefixWorkingState = "ws"
+	PrefixUser         = "usr"
 )
 
 // NewID returns a random opaque ID with the given prefix. It falls back to a

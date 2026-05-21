@@ -275,7 +275,7 @@ func looksLikeCorrection(low string) bool {
 // period followed by space/EOL — not the dot inside "internal/x.go" or
 // "e.g.").
 func splitSentences(s string) []string {
-	out := []string{}
+	var out []string
 	runes := []rune(s)
 	var cur []rune
 	flush := func() {

@@ -2,6 +2,8 @@ package migrations
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -32,12 +34,27 @@ func TestListSQLiteMigrations(t *testing.T) {
 		t.Fatalf("List returned error: %v", err)
 	}
 
-	if len(migrations) == 0 {
-		t.Fatal("expected at least one migration")
+	if len(migrations) != 1 {
+		t.Fatalf("expected one squashed migration, got %d", len(migrations))
 	}
 
-	if migrations[0].Version != "001" {
-		t.Fatalf("expected first migration version 001, got %q", migrations[0].Version)
+	if migrations[0].Version != "001" || migrations[0].Name != "init" {
+		t.Fatalf("expected 001_init migration, got %s_%s", migrations[0].Version, migrations[0].Name)
+	}
+}
+
+func TestListPostgresMigrations(t *testing.T) {
+	migrations, err := List("postgres")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	if len(migrations) != 1 {
+		t.Fatalf("expected one squashed migration, got %d", len(migrations))
+	}
+
+	if migrations[0].Version != "001" || migrations[0].Name != "init" {
+		t.Fatalf("expected 001_init migration, got %s_%s", migrations[0].Version, migrations[0].Name)
 	}
 }
 
@@ -69,5 +86,20 @@ func TestApplySQLite(t *testing.T) {
 
 	if len(result.Applied) != 0 {
 		t.Fatalf("expected no migrations on second apply, got %d", len(result.Applied))
+	}
+}
+
+func TestStatusSQLiteMissingDatabaseDoesNotCreateFile(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "missing", "mnemo.db")
+
+	status, err := StatusSQLite(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("StatusSQLite returned error: %v", err)
+	}
+	if len(status.Pending) == 0 {
+		t.Fatal("expected missing database to report pending migrations")
+	}
+	if _, err := os.Stat(dsn); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("StatusSQLite should not create missing database, stat err = %v", err)
 	}
 }

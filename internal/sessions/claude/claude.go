@@ -34,7 +34,7 @@ func New(homeDir string) *Adapter {
 	return &Adapter{HomeDir: homeDir}
 }
 
-func (a *Adapter) Tool() domain.SessionTool { return domain.SessionToolClaude }
+func (a *Adapter) Kind() domain.SessionKind { return domain.SessionKindClaude }
 
 func (a *Adapter) home() (string, error) {
 	if a.HomeDir != "" {
@@ -75,7 +75,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		return nil, err
 	}
 
-	discoveries := []sessions.Discovery{}
+	var discoveries []sessions.Discovery
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -85,7 +85,7 @@ func (a *Adapter) Discover(ctx context.Context, repoRoot string) ([]sessions.Dis
 		}
 		external := strings.TrimSuffix(entry.Name(), ".jsonl")
 		discoveries = append(discoveries, sessions.Discovery{
-			Tool:       domain.SessionToolClaude,
+			Kind:       domain.SessionKindClaude,
 			SourcePath: filepath.Join(dir, entry.Name()),
 			ExternalID: external,
 		})
@@ -136,15 +136,15 @@ func (a *Adapter) Ingest(ctx context.Context, sourcePath string) (sessions.Inges
 
 	now := time.Now().UTC()
 	session := domain.Session{
-		SourcePath:   sourcePath,
-		Tool:         domain.SessionToolClaude,
-		ExternalID:   strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl"),
-		Status:       domain.SessionStatusIngested,
-		IngestedAt:   now,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		SourcePath: sourcePath,
+		Kind:       domain.SessionKindClaude,
+		ExternalID: strings.TrimSuffix(filepath.Base(sourcePath), ".jsonl"),
+		Status:     domain.SessionStatusIngested,
+		IngestedAt: now,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
-	events := []domain.SessionEvent{}
+	var events []domain.SessionEvent
 
 	var firstTs, lastTs time.Time
 	messageCount := 0
@@ -278,7 +278,7 @@ func extractContent(line rawLine) string {
 	if err := json.Unmarshal(msg.Content, &blocks); err != nil {
 		return ""
 	}
-	parts := []string{}
+	var parts []string
 	for _, b := range blocks {
 		if b.Type == "text" && b.Text != "" {
 			parts = append(parts, b.Text)
@@ -312,5 +312,5 @@ func (a *Adapter) WatchDirs(ctx context.Context, repoRoot string) ([]string, err
 	return []string{filepath.Join(home, "projects", EncodeRepoRoot(abs))}, nil
 }
 
-var _ sessions.Adapter = (*Adapter)(nil)
+var _ sessions.Provider = (*Adapter)(nil)
 var _ sessions.DirWatcher = (*Adapter)(nil)

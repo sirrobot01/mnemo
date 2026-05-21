@@ -36,7 +36,7 @@ func saveSession(t *testing.T, a *sqlite.Adapter, repo domain.Repository, id, br
 	t.Helper()
 	ctx := context.Background()
 	s := domain.Session{
-		ID: domain.ID(id), RepoID: repo.ID, Tool: domain.SessionToolClaude,
+		ID: domain.ID(id), RepoID: repo.ID, Agent: "claude", Kind: domain.SessionKindClaude,
 		SourcePath: "/x/" + id + ".jsonl", Branch: branch, Status: domain.SessionStatusIngested,
 		StartedAt: start, IngestedAt: start, CreatedAt: start, UpdatedAt: start, MessageCount: 1,
 	}
