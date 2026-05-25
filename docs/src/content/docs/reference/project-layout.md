@@ -25,8 +25,8 @@ internal/
   config/                  .mnemo/config.yaml + .mnemo/ignore
   logging/                 slog setup + HTTP middleware
 web/                       Vite + React task-timeline SPA (embedded)
-docs/                      PRD, BUILD_PLAN, IMPLEMENTATION_STATUS, …
-docs-site/                 this Astro/Starlight site
+docs/                      Astro/Starlight site and docs content
+tmp/docs/                  old project-planning docs kept locally (ignored)
 ```
 
 ## Layering invariant

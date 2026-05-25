@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "docs-site/**"
+      - "docs/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -25,13 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: docs-site
+        working-directory: docs
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Configure Pages
-        id: pages
         uses: actions/configure-pages@v5
 
       - name: Set up Node
@@ -39,7 +38,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: docs-site/package-lock.json
+          cache-dependency-path: docs/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -47,15 +46,14 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          # Supplied by configure-pages: origin is https://<owner>.github.io,
-          # base_path is /<repo> (or / for a custom domain / user site).
-          SITE: ${{ steps.pages.outputs.origin }}
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # Custom-domain Pages builds at the site root.
+          SITE: https://mnemo.biodun.dev
+          BASE_PATH: /
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs-site/dist
+          path: docs/dist
 
   deploy:
     needs: build

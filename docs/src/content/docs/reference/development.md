@@ -32,7 +32,7 @@ A placeholder `web/dist/index.html` is committed so `go build` works before the 
 ## The docs site
 
 ```bash
-cd docs-site
+cd docs
 npm install
 npm run dev      # local preview
 npm run build    # static build

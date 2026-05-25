@@ -1,10 +1,9 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-// In CI these are injected by actions/configure-pages so the build matches the
-// GitHub Pages URL (e.g. https://<owner>.github.io + /<repo>/). Locally they
-// are unset, so Astro falls back to its default base of '/'.
-const site = process.env.SITE || undefined;
+// The docs are published at the custom GitHub Pages domain. SITE can still be
+// overridden for preview builds.
+const site = process.env.SITE || 'https://mnemo.biodun.dev';
 const base = process.env.BASE_PATH || undefined;
 
 export default defineConfig({

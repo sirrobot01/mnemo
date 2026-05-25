@@ -10,7 +10,7 @@ dist/
 
 
 .idea/
-docs/
+tmp/docs/
 /.mnemo/
 
 # build artifacts ignored, but a placeholder UI is force-tracked so
